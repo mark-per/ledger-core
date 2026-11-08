@@ -7,6 +7,7 @@ import ledger.application.Scenario.WINDOW
 import ledger.application.Scenario.replay
 import ledger.application.operation.Operation.Authorization
 import ledger.application.operation.Operation.Credit
+import ledger.application.operation.Operation.Debit
 import ledger.application.operation.Operation.Reversal
 import ledger.application.report.AccountReport
 import ledger.application.report.DayReport
@@ -227,6 +228,19 @@ class ReplayTest {
         assertEquals(
             Note(ERROR, "E15 rejected; E7 belongs to another account"),
             replay.closeDay().account(acc2).notes.single(),
+        )
+    }
+
+    @Test
+    fun aRepeatedOperationIdIsIgnoredWithAWarning() {
+        val replay = replayUntil("E8")
+
+        replay.process(Debit("E7", 5, acc1, aed("620.00"), valueDay = 2))
+        val day5 = replay.closeDay().account(acc1)
+
+        assertEquals(1, replay.ledger.fromSource("E7").size)
+        assertTrue(
+            day5.notes.any { it == Note(Severity.WARNING, "E7 was already processed; this delivery is ignored") },
         )
     }
 

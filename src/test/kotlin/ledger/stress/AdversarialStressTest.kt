@@ -18,8 +18,6 @@ import ledger.domain.holds.HoldState.EXPIRED
 import ledger.domain.holds.HoldState.SETTLED
 import ledger.domain.journal.Account
 import ledger.domain.journal.AccountId
-import ledger.domain.journal.EntryType.CREDIT
-import ledger.domain.journal.EntryType.DEBIT
 import ledger.domain.journal.EntryType.FEE_REVERSAL
 import ledger.domain.journal.EntryType.INTEREST
 import ledger.domain.journal.EntryType.OVERDRAFT_FEE
@@ -368,16 +366,18 @@ class AdversarialStressTest {
     }
 
     @Test
-    fun aRepeatedOperationIdIsBookedTwiceAndAReversalUndoesBoth() {
-        val replay = replay(3)
+    fun aRepeatedOperationIdIsIgnoredAndAReversalUndoesTheSingleEntry() {
+        val replay = replay(6)
         replay.process(Credit("C1", 1, a.id, aed("100.00"), valueDay = 1))
-        replay.process(Debit("E7", 1, a.id, aed("30.00"), valueDay = 1))
-        replay.process(Debit("E7", 1, a.id, aed("30.00"), valueDay = 1))
-        assertEquals(listOf(DEBIT, DEBIT), replay.ledger.fromSource("E7").map { it.type })
-        assertEquals(aed("40.00"), replay.ledger.balance(a.id))
-        replay.process(Reversal("R1", 1, a.id, reverses = "E7", reason = reason))
-        assertEquals(2, replay.ledger.fromSource("R1").size)
+        replay.process(Debit("D1", 2, a.id, aed("30.00"), valueDay = 2))
+        replay.process(Debit("D1", 2, a.id, aed("30.00"), valueDay = 2))
+        assertEquals(1, replay.ledger.fromSource("D1").size)
+        assertTrue(
+            replay.closeDay().account(a.id).notes.any {
+                it.severity == WARNING && it.message.contains("already processed")
+            },
+        )
+        replay.process(Reversal("R1", 3, a.id, reverses = "D1", reason = reason))
         assertEquals(aed("100.00"), replay.ledger.balance(a.id))
-        assertEquals(CREDIT, replay.ledger.fromSource("C1").single().type)
     }
 }

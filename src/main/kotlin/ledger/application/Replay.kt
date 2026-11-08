@@ -56,6 +56,7 @@ class Replay(
 
     private val reports = mutableListOf<DayReport>()
     private val notes = mutableMapOf<AccountId, MutableList<Note>>()
+    private val processed = mutableSetOf<String>()
 
     private val today: LocalDate get() = window.date(day)
 
@@ -76,6 +77,10 @@ class Replay(
                         "booked $today with its stated value date",
                 ),
             )
+        }
+        if (!processed.add(operation.id)) {
+            note(operation.account, Note.warning("${operation.id} was already processed; this delivery is ignored"))
+            return
         }
         warnIfValuedBeforeTheWindow(operation)
         val raised =
