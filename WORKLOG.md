@@ -20,3 +20,4 @@ Times are CET, as in the commit history, and every timed line below is anchored 
 - 22:54 — Every operation is idempotent on its id: a second delivery is ignored with a warning, so the stream's two idempotency keys are now the operation id for everything and the auth id for authorizations. Committed before the suite had finished; the test did not compile and the next commit, a minute later, fixed it.
 - 23:15 — The decline note now shows available before and after the hold. README sample regenerated from the output.
 - after 23:15 — The five documents committed, each after being read in full.
+- 00:16 — Interest is valued on the close day: end of day is a soft close (fees decided and posted, accruals on the soft-closed balances), then the interest posting, then the hard close. Day 6 closes at 285.79. The next-day value date was dropped.

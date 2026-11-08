@@ -26,10 +26,6 @@ The approval rule in the brief is "available stays at or above zero", which is t
 
 Card schemes release an unsettled authorization after about seven days for most merchant types and up to thirty for hotels and car rental. Seven is the common default. Half, three or four days, would be shorter than the typical clearing cycle of two to three days plus weekend, so legitimate settlements would start landing on expired holds. No hold in this stream reaches seven days, so the number changes nothing here; it exists so that the state and the rule exist. Mapping expiry to merchant category codes is out of scope.
 
-### Interest value date: the day after it is paid (`Interest.VALUE_DATE_LAG_DAYS = 1`)
-
-Interest earned on a day must not feed that day's own balance, or "0.04 % of the closing balance" would be circular on the last day. One day is the smallest lag that keeps the rule literal. Half a day does not exist in a day-granular ledger. The consequence is that Day 6 closes at 285.00 and the 0.79 is in the account from Day 7; the alternative reading (valued Day 6, closing 285.79) is in AMBIGUITIES.
-
 ### Rounding mode: HALF_EVEN (`Money.ROUNDING`)
 
 Not a magnitude, but the most consequential constant in the file: every interest accrual lands on the currency scale through it. HALF_UP rounds every exact half toward the customer; across accounts and days that is a systematic transfer. HALF_EVEN sends ties to the even neighbour and has no direction. In this stream no accrual lands on an exact half, so the choice changes no number, which is the honest thing to say about it.

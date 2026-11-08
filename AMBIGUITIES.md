@@ -4,12 +4,9 @@ What the brief left open, in the order I would want to be asked about it, each w
 
 ## 1. Which day the interest credit is valued
 
-The brief says accruals capitalize "as a single credit at end of Day 6" and defines a day's closing as every entry valued on or before it. Read literally together, the credit is in Day 6's closing and Day 6's accrual is computed on a balance that includes it, which is circular. Two consistent readings:
+The brief says accruals capitalize "as a single credit at end of Day 6" and defines a day's closing as every entry valued on or before it. A naive reading puts the credit in Day 6's closing and computes Day 6's accrual on a balance that includes it, which is circular.
 
-- Value the credit on Day 6 and compute Day 6's accrual on the balance before it. Day 6 closes at 285.79.
-- Value the credit on Day 7. Interest earned on a day never feeds that day's balance; "0.04 % of the closing balance" stays literally true for every day. Day 6 closes at **285.00** and the 0.79 is in the account from Day 7.
-
-**Resolved: the second.** The Day 6 report says so on its interest line: "paid 0.79 booked today, value Day 7, not in today's closing". A reviewer expecting 285.79 should read it as 285.00 plus 0.79 pending, not as missing interest. `ReplayTest.daySixPaysTheSumOfTheRoundedDailiesValuedTheNextDay`.
+**Resolved: the end of day is a soft close, then posting, then a hard close.** Soft close: fees are decided on the soft-closed balances and posted, and the accruals are computed on the balances with those fees in and the day's own interest out (`Ledger.closingBeforeInterest`). Posting: the interest is paid as one credit, valued the same day. Hard close: Day 6's closing includes it. Day 6 closes at **285.79** (ACC-002 at 10.008), and the report's interest line reads "paid 0.79 at the close, value Day 6, in today's closing". Valuing the credit on Day 7, so that Day 6 closes at 285.00, was considered and dropped. `ReplayTest.daySixPaysTheSumOfTheRoundedDailiesValuedTheSameDay`, `InterestTest.theInterestEntryIsBookedAndValuedOnTheLastDay`.
 
 ## 2. Settlement with no authorization (E6)
 
@@ -21,7 +18,7 @@ E7 posts on Day 5 valued Day 2. A ledger that assesses only today charges one fe
 
 ## 4. Does a day's own fee count when deciding whether that day is overdrawn
 
-The brief's closing definition ("all entries with value_date ≤ that day") includes the day's own fee; criterion 1 says "before any fee is assessed". Including it lets a fee keep itself alive after a day is cured: +10.00 before the fee reads −15.00 with it, so the fee would stand. **Resolved: each day is judged on its closing excluding its own fee and fee reversal.** Earlier days' fees do count, since that money is gone (Day 3 is 5.00, not 30.00). The report prints that figure on each fee line. `LedgerTest.closingBeforeOwnFeeIgnoresOnlyThatDaysFeeEntries`.
+The brief's closing definition ("all entries with value_date ≤ that day") includes the day's own fee; criterion 1 says "before any fee is assessed". Including it lets a fee keep itself alive after a day is cured: +10.00 before the fee reads −15.00 with it, so the fee would stand. **Resolved: each day is judged on its soft closing (`Ledger.softClosing`): its closing excluding its own end-of-day postings, the day's fee, fee reversal and interest.** The fee decision reads `softClosing`. Earlier days' fees do count, since that money is gone (Day 3 is 5.00, not 30.00). The report prints that figure on each fee line as "closing before fee". `LedgerTest.softClosingIgnoresOnlyThatDaysFeeEntries`.
 
 ## 5. What happens to a fee when the day stops being negative
 
@@ -33,7 +30,7 @@ Two readings: the total is the sum of the rounded dailies, or the total is the e
 
 ## 7. Interest on days that get restated
 
-Day 2 accrues 0.10 on Day 2, 0.00 on Day 5's view, 0.10 again on Day 6's view. **Resolved: accruals are recomputed at each close for every day the close touched, and nothing is booked before the last day**, so no adjustment is ever needed inside the window. Provisional figures are printed daily. After capitalization a restatement would need an `INTEREST_REVERSAL` and a new `INTEREST` entry; that rule is outside the window and is the subject of the one failing test. `InterestTest.aBackDatedEntryChangesEarlierDaysAccrualsWhenRecomputed`.
+Day 2 accrues 0.10 on Day 2, 0.00 on Day 5's view, 0.10 again on Day 6's view. **Resolved: accruals are recomputed at each close for every day the close touched, and nothing is booked before the last day**, so no adjustment is ever needed inside the window. Provisional figures are printed daily. After capitalization a restatement would need an `INTEREST_REVERSAL` and a new `INTEREST` entry, both valued on the original interest's value date, the last day of the period (Day 6); that rule is outside the window and is the subject of the one failing test. `InterestTest.aBackDatedEntryChangesEarlierDaysAccrualsWhenRecomputed`.
 
 ## 8. Event order versus day labels (E10)
 

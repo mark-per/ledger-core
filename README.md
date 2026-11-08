@@ -49,7 +49,7 @@ ACC-002 (BHD)
 
 - **posted**: entries the ledger learned of today, with the operation they came from and the value date they count from.
 - **restated**: earlier days whose closing changed because of something posted today. Printed only when a back-dated entry, or a fee it triggered, moved them.
-- **closing ledger**: the sum of every known entry with value date on or before this day, including the day's own fees.
+- **closing ledger**: the sum of every known entry with value date on or before this day, including the day's own fees and, on the last day, the interest paid at the close.
 - **available**: closing ledger balance minus active holds. What an authorization is checked against.
 - **fees**: overdraft fees and fee reversals booked today, each with the value day it belongs to and the closing balance that day had before its fee.
 - **authorizations**: every hold on the account and its state: ACTIVE with its expiry, SETTLED with the settled amount, DECLINED, EXPIRED.
@@ -75,9 +75,9 @@ An entry means money moved. Nothing is ever removed.
 | 11 | Day 6 | Day 2 | FEE_REVERSAL | 25.00 | Day 2 now closes at 250.00 |
 | 12 | Day 6 | Day 4 | FEE_REVERSAL | 25.00 | Day 4 now closes at 285.00 |
 | 13 | Day 6 | Day 5 | FEE_REVERSAL | 25.00 | Day 5 now closes at 285.00 |
-| 14 | Day 6 | Day 7 | INTEREST | 0.79 | 0.10 + 0.10 + 0.26 + 0.11 + 0.11 + 0.11 |
+| 14 | Day 6 | Day 6 | INTEREST | 0.79 | 0.10 + 0.10 + 0.26 + 0.11 + 0.11 + 0.11 |
 
-Closing balances once everything is known: 250.00, 250.00, 650.00, 285.00, 285.00, 285.00. The interest is in the account from Day 7. Auth-A and Auth-B live in the holds book, not here: Auth-A settled for 185.00 of 200.00, Auth-B declined.
+Closing balances once everything is known: 250.00, 250.00, 650.00, 285.00, 285.00, 285.79. Auth-A and Auth-B live in the holds book, not here: Auth-A settled for 185.00 of 200.00, Auth-B declined.
 
 ## Layout
 
