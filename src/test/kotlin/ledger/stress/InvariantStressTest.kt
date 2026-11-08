@@ -51,27 +51,27 @@ class InvariantStressTest {
 
     @Test
     fun sixDayStreamsHoldEveryInvariant() {
-        val violations = (1L..300L).sumOf { seed -> runSeed(seed, twoAccounts, 6).strictFeeViolations }
-        println("stress: 300 six-day seeds, days with more than one OVERDRAFT_FEE ever booked: $violations")
+        val daysChargedAgain = (1L..300L).sumOf { seed -> runSeed(seed, twoAccounts, 6).daysChargedAgain }
+        println("stress: 300 six-day seeds, days charged again after a cure: $daysChargedAgain")
     }
 
     @Test
     fun thirtyDayStreamsHoldEveryInvariant() {
-        var violations = 0
+        var daysChargedAgain = 0
         val millis =
             measureTimeMillis {
-                violations = (100L..119L).sumOf { seed -> runSeed(seed, threeAccounts, 30).strictFeeViolations }
+                daysChargedAgain = (100L..119L).sumOf { seed -> runSeed(seed, threeAccounts, 30).daysChargedAgain }
             }
-        println("stress: 20 thirty-day seeds x2 runs in $millis ms, days with a second fee: $violations")
+        println("stress: 20 thirty-day seeds x2 runs in $millis ms, days charged again after a cure: $daysChargedAgain")
     }
 
     @Test
     fun ninetyDayStreamsHoldEveryInvariant() {
-        var violations = 0
+        var daysChargedAgain = 0
         val millis =
             measureTimeMillis {
-                violations = (900L..904L).sumOf { seed -> runSeed(seed, threeAccounts, 90).strictFeeViolations }
+                daysChargedAgain = (900L..904L).sumOf { seed -> runSeed(seed, threeAccounts, 90).daysChargedAgain }
             }
-        println("stress: 5 ninety-day seeds x2 runs in $millis ms, days with a second fee: $violations")
+        println("stress: 5 ninety-day seeds x2 runs in $millis ms, days charged again after a cure: $daysChargedAgain")
     }
 }

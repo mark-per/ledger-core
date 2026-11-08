@@ -36,8 +36,8 @@ class StressHarness(
 ) {
     val replay = Replay(accounts, window, schedule, rate, expiryDays)
     val reports = mutableListOf<DayReport>()
-    private val daysWithSecondFee = mutableSetOf<Pair<AccountId, LocalDate>>()
-    val strictFeeViolations: Int get() = daysWithSecondFee.size
+    private val daysChargedAgainAfterACure = mutableSetOf<Pair<AccountId, LocalDate>>()
+    val daysChargedAgain: Int get() = daysChargedAgainAfterACure.size
     private val snapshots = mutableMapOf<AccountId, List<Entry>>()
     private val firstDecision = mutableMapOf<String, HoldState>()
     private val credits = mutableListOf<Credit>()
@@ -189,7 +189,7 @@ class StressHarness(
                 val charged = sameDay.count { it.type == OVERDRAFT_FEE }
                 val reversed = sameDay.count { it.type == FEE_REVERSAL }
                 assertTrue(charged - reversed in 0..1, "${account.id} $date net fees ${charged - reversed}")
-                if (charged > 1) daysWithSecondFee += account.id to date
+                if (charged > 1) daysChargedAgainAfterACure += account.id to date
                 val negative = replay.ledger.closingBeforeOwnFee(account.id, date).isNegative
                 val standing = replay.ledger.standingFee(account.id, date) != null
                 if (hasFee) {
