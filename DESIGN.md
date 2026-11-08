@@ -326,6 +326,7 @@ CloseDayUseCase ..> DayReport : produces
 - Authorizations are conditional: approve if the available balance after the hold is within the account's overdraft limit (`available − amount ≥ −limit`; the account owns that rule). The account's overdraft limit is a production knob; both accounts here have 0, so the rule reduces to "available stays at or above zero". Exactly zero approves.
 - Debits and settlements are unconditional: they always book, whatever the balance.
 - States: ACTIVE, SETTLED (keeps the settled amount), DECLINED (kept so the report can show it), EXPIRED.
+- The authorization id is the network's reference, given in the request. Production adds the second identifier a card issuer owns: an approval code generated when a hold is approved, carried on the hold and required on the settlement as proof of approval. The brief's settlements quote only the reference, so the code is not modelled.
 - The holds book is keyed by account and authorization id. Placing a hold is idempotent on that key: networks retry an authorization when a response times out, so the same id can arrive twice; the second arrival returns the original decision, places nothing, and the report notes the repeat. The same id on another account is that account's own, separate hold, and a settlement quoting another account's id finds nothing.
 - Hold and settlement amounts are positive magnitudes; a non-positive one is refused before anything changes.
 - A settlement is decided, then its journal entry is appended, then the hold is recorded as settled: journal first, projection second, so a failed append leaves the holds book untouched.
@@ -375,6 +376,7 @@ CloseDayUseCase ..> DayReport : produces
 - An operation's "Day N" is the sender's label. The booking date is the processing day on which it was received.
 - An authorization carries no value date in the model. A hold moves no money, so a value date has nothing to attach to; the brief's value_date on authorizations is dropped.
 - Dates in the ledger are calendar dates. The scenario translates "Day N" to a date from an anchor (Day 1 = the anchor); the report prints both the label and the date.
+- Every operation is idempotent on its id: a second delivery of the same operation id is ignored with a warning, whatever its kind. Authorizations are additionally idempotent on their auth id (see Holds).
 - An operation labelled earlier than the clock is booked today with its stated value date and a warning.
 - An operation labelled later than the clock closes the intervening days first. Days after the window close normally and are reported; their accruals belong to a next period that this run never pays.
 - A value date before the first day counts toward balances from the first day on and earns nothing before it; the report carries a warning.
