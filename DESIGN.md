@@ -114,6 +114,7 @@ namespace journal {
   }
   class Ledger {
     append(account, type, amount, bookingDate, valueDate, source, detail, reverses) Entry
+    appendAll(account, postings) List~Entry~
     reverse(source, account, bookingDate, by, reason) ReversalOutcome
     entries(account) List~Entry~
     fromSource(eventId) List~Entry~
@@ -156,7 +157,8 @@ namespace holds {
   }
   class Holds {
     place(authId, account, amount, date, ledgerBalance) Placement
-    settle(authId, amount) SettlementOutcome
+    settlementFor(account, authId, amount) SettlementOutcome
+    recordSettlement(hold, amount) Hold
     expire(date) List~Hold~
     available(account, ledgerBalance) Money
     forAccount(account) List~Hold~
@@ -304,7 +306,7 @@ CloseDayUseCase ..> DayReport : produces
 
 ## Journal
 
-- An append-only list of entries, one sequence number each, in arrival order.
+- An append-only list of entries, one sequence number each, in arrival order. An operation that books several entries (instalments, a reversal of several entries) appends them all or nothing: every posting is validated before any is written.
 - An account: id, currency, overdraft limit (0 for both accounts here).
 - An entry: account, type, signed amount, booking date, value date (both calendar dates), a source (the event id it came from; rule entries have none), an optional detail (what it is, in words) and, for reversals of any kind, the sequence number of the entry it undoes. Reversals look entries up by source, never by the printed text.
 - Types: CREDIT, DEBIT, SETTLEMENT, UNMATCHED_SETTLEMENT, REVERSAL, OVERDRAFT_FEE, FEE_REVERSAL, INTEREST, INTEREST_REVERSAL.
@@ -324,7 +326,9 @@ CloseDayUseCase ..> DayReport : produces
 - Authorizations are conditional: approve if the available balance after the hold is within the account's overdraft limit (`available − amount ≥ −limit`; the account owns that rule). The account's overdraft limit is a production knob; both accounts here have 0, so the rule reduces to "available stays at or above zero". Exactly zero approves.
 - Debits and settlements are unconditional: they always book, whatever the balance.
 - States: ACTIVE, SETTLED (keeps the settled amount), DECLINED (kept so the report can show it), EXPIRED.
-- Placing a hold is idempotent on the authorization id. Networks retry an authorization when a response times out, so the same id can arrive twice; the second arrival returns the original decision, places nothing, and the report notes the repeat.
+- The holds book is keyed by account and authorization id. Placing a hold is idempotent on that key: networks retry an authorization when a response times out, so the same id can arrive twice; the second arrival returns the original decision, places nothing, and the report notes the repeat. The same id on another account is that account's own, separate hold, and a settlement quoting another account's id finds nothing.
+- Hold and settlement amounts are positive magnitudes; a non-positive one is refused before anything changes.
+- A settlement is decided, then its journal entry is appended, then the hold is recorded as settled: journal first, projection second, so a failed append leaves the holds book untouched.
 - An authorization is decided on the balance as known at that moment and the decision is final. A later back-dated entry or reversal never re-opens it.
 - The holds book is a projection: it is rebuilt by replaying authorization and settlement events, so a hold's state may change in place. Append-only governs events and the journal, not this projection.
 - A hold expires at the close of the seventh day after it was placed, is released, and no longer counts against available. Scheme rules vary by merchant category (7 days for most, 30 for hotels and car rental); mapping expiry to merchant category codes is out of scope, 7 is used for all.
@@ -348,7 +352,7 @@ CloseDayUseCase ..> DayReport : produces
 - Fees from earlier days do count toward later days.
 - If the day is negative and has no fee yet: book one OVERDRAFT_FEE, booked today, valued that day.
 - If the day is no longer negative and has a fee: book one FEE_REVERSAL mirroring that fee entry (same amount, linked to it), booked today, valued that day. The fee stays in the journal; the net for that day is zero. This applies whatever made the day non-negative, a reversed debit or a back-dated credit alike: the fee rule is a function of the day's closing, in both directions. A bank that keeps the fee when a late deposit cures the overdraft would change this one rule.
-- One fee per account per day, ever. Running the check twice books nothing new.
+- At most one standing fee per account per day. Running the check twice books nothing new. A day that is cured and later broken again is charged again, because the rule is a function of the day's closing; its trail then reads fee, reversal, fee.
 - The fee is defined per currency. An overdraft in a currency without a defined fee is reported as an error and not charged.
 
 ## Interest
@@ -372,7 +376,9 @@ CloseDayUseCase ..> DayReport : produces
 - An authorization carries no value date in the model. A hold moves no money, so a value date has nothing to attach to; the brief's value_date on authorizations is dropped.
 - Dates in the ledger are calendar dates. The scenario translates "Day N" to a date from an anchor (Day 1 = the anchor); the report prints both the label and the date.
 - An operation labelled earlier than the clock is booked today with its stated value date and a warning.
-- An operation labelled later than the clock closes the intervening days first.
+- An operation labelled later than the clock closes the intervening days first. Days after the window close normally and are reported; their accruals belong to a next period that this run never pays.
+- A value date before the first day counts toward balances from the first day on and earns nothing before it; the report carries a warning.
+- Every operation amount is a positive magnitude; the direction comes from the kind of operation. A non-positive amount is refused at the boundary.
 - Closing a day expires holds, runs fees, then interest, then prints the report.
 - The ledger never reads a clock. A day ends when the replay closes it, which it does when the event labels move to the next day and once more at the end of the stream. In production the same close is triggered at the bank's cut-off time by whatever owns the business date: a scheduler, or an end-of-day event from another service.
 - A close reads entries booked on or before the day being closed. Anything that arrives later is booked on a later day with its own value date, and the next close re-checks from that value date. Late arrivals are back-dated entries; there is no second mechanism.
