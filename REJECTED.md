@@ -40,6 +40,10 @@ The first version of `FeeSweep` assessed only the day being closed. Its tests we
 
 Built, tested, and removed. The idea: sum the exact accruals, round once (0.802 → 0.80), then hand the one-fils difference to the day that lost most in rounding, so the dailies still sum to the payment. It pays the figure closest to the true interest and the leak from daily rounding grows with the period and the number of accounts, which is a real argument in production. It was removed after review because the printed Day 4 figure became 0.12 on a balance whose own rounding is 0.11, and a daily figure that is not its own rounding is harder to audit than a bounded, visible leak. The exact figure is printed beside the payment instead. The production argument is in the architecture document.
 
+### Interest credit valued the day after capitalization
+
+Built, committed and tested first: the Day 6 payment carried value date Day 7, so that interest earned on a day could not feed that day's own balance and "0.04 % of the closing balance" stayed literally true for every day. Day 6 closed at 285.00. Removed because the brief says the credit capitalizes "at end of Day 6", and pushing it to Day 7 put it outside the window the brief defines. The replacement is the soft close: fees are decided and posted, each day's accrual is computed on the soft-closed balance (fees in, that day's interest out), the interest is posted valued the same day, then the day closes. That removes the circularity without moving the credit. Day 6 closes at 285.79.
+
 ### Throwing on a reused authorization id
 
 The first `Holds.place` threw a domain error when an auth id was seen twice, treating it as impossible input. It is not impossible; it is a network retry. Replaced by an idempotent placement that returns the original decision and places nothing, with a warning in the report.
