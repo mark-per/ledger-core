@@ -93,7 +93,7 @@ class ReplayTest {
         val replay = replayUntil("E9")
 
         assertEquals(5, replay.day)
-        assertEquals(aed("-370.00"), replay.ledger.closingBeforeOwnFee(acc1, date(2)))
+        assertEquals(aed("-370.00"), replay.ledger.softClosing(acc1, date(2)))
     }
 
     @Test
@@ -126,11 +126,11 @@ class ReplayTest {
         assertEquals(List(3) { FEE_REVERSAL }, day6.fees.map { it.type })
         assertEquals(listOf(date(2), date(4), date(5)), day6.fees.map { it.valueDate })
         assertEquals(
-            listOf("250.00", "250.00", "650.00", "285.00", "285.00", "285.00"),
+            listOf("250.00", "250.00", "650.00", "285.00", "285.00", "285.79"),
             (1..6).map { ledger.closing(acc1, date(it)).toString() },
         )
         assertTrue((1..6).all { ledger.standingFee(acc1, date(it)) == null })
-        assertEquals(aed("285.00"), day6.closing)
+        assertEquals(aed("285.79"), day6.closing)
         assertEquals(DECLINED, day6.holds.single { it.authId == "Auth-B" }.state)
         val e9 = day6.posted.single()
         assertEquals("E9", e9.source)
@@ -139,7 +139,7 @@ class ReplayTest {
     }
 
     @Test
-    fun daySixPaysTheSumOfTheRoundedDailiesValuedTheNextDay() {
+    fun daySixPaysTheSumOfTheRoundedDailiesValuedTheSameDay() {
         val day6 = acc1On(6)
         val capitalization = day6.capitalization!!
 
@@ -147,7 +147,7 @@ class ReplayTest {
         assertEquals(aed("0.79"), capitalization.paid)
         assertEquals(listOf("0.10", "0.10", "0.26", "0.11", "0.11", "0.11"), day6.accruals.values.map { it.toString() })
         assertEquals(date(6), capitalization.entry!!.bookingDate)
-        assertEquals(date(7), capitalization.entry!!.valueDate)
+        assertEquals(date(6), capitalization.entry!!.valueDate)
     }
 
     @Test
@@ -180,7 +180,7 @@ class ReplayTest {
         assertEquals(WARNING, day6.notes.single().severity)
         assertTrue(day6.notes.single().message.startsWith("E10 is labelled Day 5 but arrived on Day 6"))
         assertEquals(bhd("0.008"), day6.capitalization!!.paid)
-        assertEquals(bhd("10.000"), day6.closing)
+        assertEquals(bhd("10.008"), day6.closing)
     }
 
     @Test

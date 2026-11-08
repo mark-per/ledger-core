@@ -29,7 +29,7 @@ class FeeSweep(private val ledger: Ledger, private val schedule: FeeSchedule) {
         date: LocalDate,
         today: LocalDate,
     ): Assessment {
-        val overdrawn = ledger.closingBeforeOwnFee(accountId, date).isNegative
+        val overdrawn = ledger.softClosing(accountId, date).isNegative
         val standingFee = ledger.standingFee(accountId, date)
         return when {
             overdrawn && standingFee == null -> charge(accountId, date, today)

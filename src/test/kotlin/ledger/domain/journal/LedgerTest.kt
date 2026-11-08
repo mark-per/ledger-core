@@ -3,6 +3,7 @@ package ledger.domain.journal
 import ledger.domain.journal.EntryType.CREDIT
 import ledger.domain.journal.EntryType.DEBIT
 import ledger.domain.journal.EntryType.FEE_REVERSAL
+import ledger.domain.journal.EntryType.INTEREST
 import ledger.domain.journal.EntryType.OVERDRAFT_FEE
 import ledger.domain.journal.ReversalOutcome.AlreadyReversed
 import ledger.domain.journal.ReversalOutcome.Booked
@@ -105,14 +106,26 @@ class LedgerTest {
     }
 
     @Test
-    fun closingBeforeOwnFeeIgnoresOnlyThatDaysFeeEntries() {
+    fun softClosingIgnoresOnlyThatDaysFeeEntries() {
         ledger.append(acc1.id, DEBIT, aed("-370.00"), day(2), day(2), source = "E7")
         ledger.append(acc1.id, OVERDRAFT_FEE, aed("-25.00"), day(5), day(2))
         ledger.append(acc1.id, CREDIT, aed("400.00"), day(3), day(3), source = "E4")
 
-        assertEquals(aed("-370.00"), ledger.closingBeforeOwnFee(acc1.id, day(2)))
+        assertEquals(aed("-370.00"), ledger.softClosing(acc1.id, day(2)))
         assertEquals(aed("-395.00"), ledger.closing(acc1.id, day(2)))
-        assertEquals(aed("5.00"), ledger.closingBeforeOwnFee(acc1.id, day(3)))
+        assertEquals(aed("5.00"), ledger.softClosing(acc1.id, day(3)))
+    }
+
+    @Test
+    fun closingBeforeInterestKeepsThatDaysFeesAndIgnoresOnlyThatDaysInterest() {
+        ledger.append(acc1.id, CREDIT, aed("300.00"), day(1), day(1), source = "E1")
+        ledger.append(acc1.id, OVERDRAFT_FEE, aed("-25.00"), day(6), day(6))
+        ledger.append(acc1.id, INTEREST, aed("0.79"), day(6), day(6))
+
+        assertEquals(aed("275.00"), ledger.closingBeforeInterest(acc1.id, day(6)))
+        assertEquals(aed("300.00"), ledger.softClosing(acc1.id, day(6)))
+        assertEquals(aed("275.79"), ledger.closing(acc1.id, day(6)))
+        assertEquals(aed("275.79"), ledger.closingBeforeInterest(acc1.id, day(7)))
     }
 
     @Test

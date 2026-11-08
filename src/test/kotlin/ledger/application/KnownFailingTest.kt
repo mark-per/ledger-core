@@ -41,7 +41,7 @@ class KnownFailingTest {
         )
 
         // Interest does not cope. On the corrected view the six accruals are 0.10, 0.10, 0.10, 0.00, 0.00, 0.00 = 0.30.
-        // The design says: reverse the 0.79 (INTEREST_REVERSAL) and pay 0.30 (INTEREST), both valued Day 7, so that the
+        // The design says: reverse the 0.79 (INTEREST_REVERSAL) and pay 0.30 (INTEREST), both valued Day 6, so that the
         // interest entries net to 0.30. What the ledger actually holds is the original 0.79 and nothing else.
         //
         // What this reveals: fees are a function of the current view and are corrected whenever the view changes, but

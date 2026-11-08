@@ -76,9 +76,9 @@ class ReportPrinter(private val window: Window) {
         val capitalization = report.capitalization ?: return " (provisional)"
         val exact = capitalization.exact.stripTrailingZeros().toPlainString()
         val entry = capitalization.entry ?: return "; exact $exact, nothing to pay"
-        return "; exact $exact, paid ${capitalization.paid} booked today, value ${window.label(
+        return "; exact $exact, paid ${capitalization.paid} at the close, value ${window.label(
             entry.valueDate,
-        )}, not in today's closing"
+        )}, in today's closing"
     }
 
     private fun lines(items: List<String>): String =

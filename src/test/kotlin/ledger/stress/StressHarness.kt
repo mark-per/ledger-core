@@ -190,7 +190,7 @@ class StressHarness(
                 val reversed = sameDay.count { it.type == FEE_REVERSAL }
                 assertTrue(charged - reversed in 0..1, "${account.id} $date net fees ${charged - reversed}")
                 if (charged > 1) daysChargedAgainAfterACure += account.id to date
-                val negative = replay.ledger.closingBeforeOwnFee(account.id, date).isNegative
+                val negative = replay.ledger.softClosing(account.id, date).isNegative
                 val standing = replay.ledger.standingFee(account.id, date) != null
                 if (hasFee) {
                     assertEquals(negative, standing, "${account.id} $date negative=$negative standing=$standing")
@@ -226,7 +226,7 @@ class StressHarness(
         val currency = replay.ledger.account(accountId).currency
         assertEquals(dailies.values.fold(Money.zero(currency)) { sum, daily -> sum + daily }, paid)
         dailies.forEach { (date, daily) ->
-            val closing = replay.ledger.closing(accountId, date)
+            val closing = replay.ledger.closingBeforeInterest(accountId, date)
             val expected =
                 if (closing.isPositive) Money.round(closing.amount.multiply(rate), currency) else Money.zero(currency)
             assertEquals(expected, daily, "$accountId daily for $date on closing $closing")

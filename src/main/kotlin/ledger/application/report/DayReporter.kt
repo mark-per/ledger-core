@@ -36,7 +36,7 @@ class DayReporter(
             closingsBeforeFee =
                 swept.entries.associate {
                         fee ->
-                    fee.valueDate to ledger.closingBeforeOwnFee(account.id, fee.valueDate)
+                    fee.valueDate to ledger.softClosing(account.id, fee.valueDate)
                 },
             restated = restatements(account.id, date),
             holds = holds.forAccount(account.id),

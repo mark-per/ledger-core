@@ -77,7 +77,7 @@ class InterestTest {
     }
 
     @Test
-    fun theInterestEntryIsBookedOnTheLastDayAndValuedTheNextDay() {
+    fun theInterestEntryIsBookedAndValuedOnTheLastDay() {
         bookFinalBalances()
         interest.recompute(acc, from = day(1), today = day(6))
 
@@ -86,9 +86,10 @@ class InterestTest {
         assertEquals(INTEREST, entry.type)
         assertEquals(aed("0.79"), entry.amount)
         assertEquals(day(6), entry.bookingDate)
-        assertEquals(day(7), entry.valueDate)
-        assertEquals(aed("285.00"), ledger.closing(acc, day(6)))
-        assertEquals(aed("285.79"), ledger.closing(acc, day(7)))
+        assertEquals(day(6), entry.valueDate)
+        assertEquals(aed("285.00"), ledger.softClosing(acc, day(6)))
+        assertEquals(aed("285.00"), ledger.closingBeforeInterest(acc, day(6)))
+        assertEquals(aed("285.79"), ledger.closing(acc, day(6)))
     }
 
     @Test

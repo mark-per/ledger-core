@@ -54,7 +54,7 @@ class Interest(private val ledger: Ledger, private val dailyRate: BigDecimal) {
             type = INTEREST,
             amount = paid,
             bookingDate = bookingDate,
-            valueDate = bookingDate.plusDays(VALUE_DATE_LAG_DAYS),
+            valueDate = bookingDate,
             detail = "interest ${period.first()} to ${period.last()}",
         )
     }
@@ -63,14 +63,10 @@ class Interest(private val ledger: Ledger, private val dailyRate: BigDecimal) {
         accountId: AccountId,
         date: LocalDate,
     ): BigDecimal {
-        val closing = ledger.closing(accountId, date)
+        val closing = ledger.closingBeforeInterest(accountId, date)
         if (!closing.isPositive) return BigDecimal.ZERO
         return closing.amount.multiply(dailyRate)
     }
 
     private fun currency(accountId: AccountId): Currency = ledger.account(accountId).currency
-
-    private companion object {
-        const val VALUE_DATE_LAG_DAYS = 1L
-    }
 }

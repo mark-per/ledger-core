@@ -43,11 +43,11 @@ class ReportPrinterTest {
     }
 
     @Test
-    fun daySixShowsTheInterestAsPaidTodayValuedTomorrowAndNotInTheClosing() {
+    fun daySixShowsTheInterestAsPaidAndValuedAtTheCloseAndInTheClosing() {
         assertTrue(
-            day(6).contains("exact 0.802, paid 0.79 booked today, value Day 7 (2026-01-11), not in today's closing"),
+            day(6).contains("exact 0.802, paid 0.79 at the close, value Day 6 (2026-01-10), in today's closing"),
         )
-        assertTrue(day(6).contains("closing ledger: 285.00"))
+        assertTrue(day(6).contains("closing ledger: 285.79"))
         assertTrue(day(6).contains("E10 CREDIT 3.334 value Day 5 (2026-01-09), instalment 1 of 3"))
         assertTrue(day(6).contains("warning: E10 is labelled Day 5 but arrived on Day 6"))
     }

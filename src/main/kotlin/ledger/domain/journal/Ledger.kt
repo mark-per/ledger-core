@@ -1,6 +1,8 @@
 package ledger.domain.journal
 
 import ledger.domain.journal.EntryType.FEE_REVERSAL
+import ledger.domain.journal.EntryType.INTEREST
+import ledger.domain.journal.EntryType.INTEREST_REVERSAL
 import ledger.domain.journal.EntryType.OVERDRAFT_FEE
 import ledger.domain.journal.EntryType.REVERSAL
 import ledger.domain.journal.ReversalOutcome.AlreadyReversed
@@ -84,10 +86,15 @@ class Ledger(accounts: List<Account>) {
         date: LocalDate,
     ): Money = sum(accountId, entries(accountId).filter { it.valueDate <= date })
 
-    fun closingBeforeOwnFee(
+    fun softClosing(
         accountId: AccountId,
         date: LocalDate,
-    ): Money = sum(accountId, entries(accountId).filter { it.valueDate <= date && !isOwnDayFee(it, date) })
+    ): Money = sum(accountId, entries(accountId).filter { it.valueDate <= date && !isEndOfDayPosting(it, date) })
+
+    fun closingBeforeInterest(
+        accountId: AccountId,
+        date: LocalDate,
+    ): Money = sum(accountId, entries(accountId).filter { it.valueDate <= date && !isOwnDayInterest(it, date) })
 
     fun standingFee(
         accountId: AccountId,
@@ -145,13 +152,23 @@ class Ledger(accounts: List<Account>) {
         return entry
     }
 
-    private fun isOwnDayFee(
+    private fun isEndOfDayPosting(
         entry: Entry,
         date: LocalDate,
-    ): Boolean = entry.valueDate == date && (entry.type == OVERDRAFT_FEE || entry.type == FEE_REVERSAL)
+    ): Boolean = entry.valueDate == date && entry.type in END_OF_DAY_POSTINGS
+
+    private fun isOwnDayInterest(
+        entry: Entry,
+        date: LocalDate,
+    ): Boolean = entry.valueDate == date && entry.type in INTEREST_POSTINGS
 
     private fun sum(
         accountId: AccountId,
         selected: List<Entry>,
     ): Money = selected.fold(Money.zero(account(accountId).currency)) { total, entry -> total + entry.amount }
+
+    private companion object {
+        val INTEREST_POSTINGS = setOf(INTEREST, INTEREST_REVERSAL)
+        val END_OF_DAY_POSTINGS = setOf(OVERDRAFT_FEE, FEE_REVERSAL) + INTEREST_POSTINGS
+    }
 }
