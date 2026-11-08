@@ -17,12 +17,12 @@ An in-memory account ledger core for two accounts over six processing days. No w
 |---|---|---|---|
 | Money | amounts at currency precision, rounding, splitting | — | — |
 | Journal | append-only entries, closing balance by value date | — | entries |
-| Holds | authorizations, available balance, settlement | journal balance | settlement entries |
+| Holds | authorizations, available balance, settlement | — | — |
 | Fees | overdraft fee per overdrawn value day, and its reversal | journal closings | fee entries |
 | Interest | daily accruals, one capitalization | journal closings | one interest entry |
-| Replay | the processing clock, event dispatch, the per-day report | all of the above | — |
+| Replay | the processing clock, event dispatch, the per-day report | all of the above | event entries, through the journal |
 
-The first five are the domain: one rule from the brief each, one or two types, one test class. Replay is the application layer: sequencing and output, no business rule. There is no infrastructure, so there are no ports or adapters.
+The first five are the domain: one rule from the brief each, a few types, one test class. Replay is the application layer: it turns events into journal appends, sequences the day close and builds the report. It decides nothing about money; every yes or no comes back from a domain type as an outcome. There is no infrastructure, so there are no ports or adapters.
 
 ## Class diagrams
 
@@ -77,17 +77,29 @@ namespace journal {
     amount Money
     bookingDate LocalDate
     valueDate LocalDate
-    reference String
     source String?
+    detail String?
+    reverses Int?
+  }
+  class ReversalOutcome {
+    <<sealed>>
+    Booked(entries)
+    NothingBooked
+    NotReversible
+    AlreadyReversed
+    DifferentAccount
   }
   class Ledger {
-    append(account, type, amount, bookingDate, valueDate, reference, source) Entry
+    append(account, type, amount, bookingDate, valueDate, source, detail, reverses) Entry
+    reverse(source, account, bookingDate, by, reason) ReversalOutcome
     entries(account) List~Entry~
     fromSource(eventId) List~Entry~
     balance(account) Money
     closing(account, date) Money
     closingBeforeOwnFee(account, date) Money
-    standingFee(account, date) Int
+    standingFee(account, date) Entry?
+    earliestValueDateSince(account, sequence) LocalDate?
+    lastSequence(account) Int
   }
 }
 namespace holds {
@@ -124,6 +136,7 @@ namespace holds {
 Money --> Currency
 Account --> Currency
 Ledger "1" *-- "many" Entry : append only
+Ledger ..> ReversalOutcome : returns
 Ledger --> Account : knows
 Entry --> EntryType
 Entry --> Money
@@ -174,6 +187,10 @@ namespace application {
     reverses String
     reason String
   }
+  class Note {
+    severity Severity
+    message String
+  }
   class Replay {
     process(event)
     closeDay() DayReport
@@ -218,12 +235,13 @@ Replay ..> DayReport : produces
 
 - An append-only list of entries, one sequence number each, in arrival order.
 - An account: id, currency, overdraft limit (0 for both accounts here).
-- An entry: account, type, signed amount, booking date, value date (both calendar dates), a reference (what it is, in words) and a source (the event id it came from; rule entries have none). Reversals look entries up by source, never by the printed text.
+- An entry: account, type, signed amount, booking date, value date (both calendar dates), a source (the event id it came from; rule entries have none), an optional detail (what it is, in words) and, for reversals of any kind, the sequence number of the entry it undoes. Reversals look entries up by source, never by the printed text.
 - Types: CREDIT, DEBIT, SETTLEMENT, UNMATCHED_SETTLEMENT, REVERSAL, OVERDRAFT_FEE, FEE_REVERSAL, INTEREST, INTEREST_REVERSAL.
 - Signed amounts rather than two columns. The sign is guarded against the type at append.
 - A reversal is just another line with the opposite sign. It references the entry it undoes and must carry a reason (duplicate, wrong amount, returned payment, won dispute, operations correction). A reversal without a reason cannot be constructed. The brief gives none for its reversal, so the scenario passes "not stated by the brief" explicitly and AMBIGUITIES records it.
 - A reversal takes the original's value date, so the history reads as if the original never happened. A refund is different: new money, a CREDIT with its own value date.
-- Only entries that came from events can be reversed by an event. Fees and interest are corrected by their own rules.
+- Only entries that came from events can be reversed by an event. Fees and interest are corrected by their own rules. A reversal of a reversal, a second reversal of the same event, or a reversal quoting another account's event is refused.
+- The journal owns the reversal rule (`Ledger.reverse`) and returns an outcome; the replay only records the refusal.
 - An entry means money moved. Declines and rejections never become entries.
 - `closing(account, day)`: sum of that account's entries with value date ≤ day. Recomputed on every call.
 - Cost accepted: a scan per query. Bought: correctness under back-dating for free. A per-day index is the first thing to add at scale.
@@ -231,10 +249,10 @@ Replay ..> DayReport : produces
 ## Holds
 
 - A hold is a promise, not a movement. It lives in the holds book beside the journal and never enters a balance.
-- `available = ledger balance − active holds`.
+- `available = ledger balance − active holds`, where ledger balance is the closing balance as of today.
 - Authorizations are conditional: approve if `available − amount ≥ −overdraft limit`. The account's overdraft limit is a production knob; both accounts here have 0, so the rule reduces to "available stays at or above zero". Exactly zero approves.
 - Debits and settlements are unconditional: they always book, whatever the balance.
-- States: ACTIVE, SETTLED (keeps the settled amount), DECLINED (kept so the report can show it), EXPIRED.
+- States: ACTIVE, SETTLED (keeps the settled amount), DECLINED (kept so the report can show it), EXPIRED. An authorization id is used once; a second hold with the same id is refused.
 - An authorization is decided on the balance as known at that moment and the decision is final. A later back-dated entry or reversal never re-opens it.
 - The holds book is a projection: it is rebuilt by replaying authorization and settlement events, so a hold's state may change in place. Append-only governs events and the journal, not this projection.
 - A hold expires at the close of the seventh day after it was placed, is released, and no longer counts against available. Scheme rules vary by merchant category (7 days for most, 30 for hotels and car rental); mapping expiry to merchant category codes is out of scope, 7 is used for all.
@@ -252,12 +270,12 @@ Replay ..> DayReport : produces
 
 - The fee is checked when a day closes, not when a debit arrives. A debit that goes negative at 10am and is covered by 4pm costs nothing.
 - Debits and settlements are never refused for lack of funds. Only authorizations are.
-- When a day closes, the check starts at the earliest value date touched since the last close and runs oldest first through today. On a normal day that is today alone. A back-dated entry moves the start back to its value date.
+- When a day closes, the check starts at the earliest value date touched since the last close (a journal query) and runs oldest first through today. On a normal day that is today alone. A back-dated entry moves the start back to its value date.
 - Oldest first matters: an earlier day's fee must be in place before the next day is judged.
 - The check reads the day's closing balance before its own fee, so a fee never feeds its own test.
 - Fees from earlier days do count toward later days.
 - If the day is negative and has no fee yet: book one OVERDRAFT_FEE, booked today, valued that day.
-- If the day is no longer negative and has a fee: book one FEE_REVERSAL of the same amount, booked today, valued that day. The fee stays in the journal; the net for that day is zero. This applies whatever made the day non-negative, a reversed debit or a back-dated credit alike: the fee rule is a function of the day's closing, in both directions. A bank that keeps the fee when a late deposit cures the overdraft would change this one rule.
+- If the day is no longer negative and has a fee: book one FEE_REVERSAL mirroring that fee entry (same amount, linked to it), booked today, valued that day. The fee stays in the journal; the net for that day is zero. This applies whatever made the day non-negative, a reversed debit or a back-dated credit alike: the fee rule is a function of the day's closing, in both directions. A bank that keeps the fee when a late deposit cures the overdraft would change this one rule.
 - One fee per account per day, ever. Running the check twice books nothing new.
 - The fee is defined per currency. An overdraft in a currency without a defined fee is reported as an error and not charged.
 
