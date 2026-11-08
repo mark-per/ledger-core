@@ -10,19 +10,32 @@ An in-memory account ledger core for two accounts over six processing days. No w
 - rules re-run when the past changes
 - corrections are new entries, never edits
 - only authorizations are conditional: the ledger may say no to a hold. Everything that reports money already moved (credits, debits, settlements, reversals) is unconditional and always books; the fee rule handles the consequences
+- two kinds of no: a legitimate refusal is a typed outcome (`SettlementOutcome`, `ReversalOutcome`, `Assessment`, a DECLINED hold) and never an exception; an impossible input (for example a wrong scale, mixed currencies, a blank reason, a second capitalization) throws a named `DomainError` from the type whose rule it breaks, and nothing catches it. Each area keeps its errors in an `error` sub-package; the base class lives in `domain/error`
 
 ## Five concerns and one orchestrator
 
 | Concern | Owns | Reads | Writes |
 |---|---|---|---|
-| Money | amounts at currency precision, rounding, splitting | — | — |
+| Money | the shared value types: amounts at currency precision, rounding, splitting. No rule of its own; every other area is built on it and it depends on none of them | — | — |
 | Journal | append-only entries, closing balance by value date | — | entries |
 | Holds | authorizations, available balance, settlement | — | — |
 | Fees | overdraft fee per overdrawn value day, and its reversal | journal closings | fee entries |
 | Interest | daily accruals, one capitalization | journal closings | one interest entry |
 | Replay | the processing clock, event dispatch, the per-day report | all of the above | event entries, through the journal |
 
-The first five are the domain: one rule from the brief each, a few types, one test class. Replay is the application layer: it turns events into journal appends, sequences the day close and builds the report. It decides nothing about money; every yes or no comes back from a domain type as an outcome. There is no infrastructure, so there are no ports or adapters.
+The first five are the domain: money is the shared kernel, and each of the other four owns one rule from the brief, a few types and one test class. The application layer is one use case per job, grouped by the domain area it exercises (`journal`: PostCreditUseCase, PostDebitUseCase, ReverseUseCase; `holds`: AuthorizeUseCase, SettleUseCase; `close`: CloseDayUseCase), each a small class that calls the domain and returns what happened as notes; `Replay` only owns the clock and picks the use case for each operation. The layer decides nothing about money; every yes or no comes back from a domain type as an outcome. There is no infrastructure, so there are no ports or adapters.
+
+```
+application/
+  operation/ Operation and its five kinds
+  journal/   PostCreditUseCase, PostDebitUseCase, ReverseUseCase
+  holds/     AuthorizeUseCase, SettleUseCase
+  close/     CloseDayUseCase
+  report/    DayReporter, DayReport, AccountReport, Restatement, Note, Severity, ReportPrinter
+  Replay     clock and dispatch
+  Window     the anchor date and the Day N label
+  Scenario   the two accounts and the ten events
+```
 
 ## Class diagrams
 
@@ -42,7 +55,6 @@ namespace money {
     currency Currency
     plus(Money) Money
     minus(Money) Money
-    times(rate) Money
     allocate(parts) List~Money~
     isNegative
     isPositive
@@ -57,18 +69,29 @@ namespace journal {
     id AccountId
     currency Currency
     overdraftLimit Money
+    withinOverdraft(available) Boolean
+  }
+  class Direction {
+    <<enumeration>>
+    IN
+    OUT
+    EITHER
+    allows(signum) Boolean
   }
   class EntryType {
     <<enumeration>>
-    CREDIT +1
-    DEBIT -1
-    SETTLEMENT -1
-    UNMATCHED_SETTLEMENT -1
-    REVERSAL 0
-    OVERDRAFT_FEE -1
-    FEE_REVERSAL +1
-    INTEREST +1
-    INTEREST_REVERSAL -1
+    CREDIT IN
+    DEBIT OUT
+    SETTLEMENT OUT
+    UNMATCHED_SETTLEMENT OUT
+    REVERSAL EITHER
+    OVERDRAFT_FEE OUT
+    FEE_REVERSAL IN
+    INTEREST IN
+    INTEREST_REVERSAL OUT
+  }
+  class Reason {
+    text String
   }
   class Entry {
     sequence Int
@@ -98,8 +121,8 @@ namespace journal {
     closing(account, date) Money
     closingBeforeOwnFee(account, date) Money
     standingFee(account, date) Entry?
-    earliestValueDateSince(account, sequence) LocalDate?
-    lastSequence(account) Int
+    earliestValueDateSinceLastClose(account) LocalDate?
+    markClosed(account)
   }
 }
 namespace holds {
@@ -118,6 +141,7 @@ namespace holds {
     expiresOn LocalDate
     state HoldState
     settledFor Money?
+    decide(authId, account, amount, availableAfterHold, placedOn, expiresOn)$ Hold
   }
   class SettlementOutcome {
     <<sealed>>
@@ -125,8 +149,13 @@ namespace holds {
     OverHold(hold, excess)
     Unmatched(reason)
   }
+  class Placement {
+    <<sealed>>
+    Placed(hold)
+    Repeated(hold)
+  }
   class Holds {
-    place(authId, account, amount, date, ledgerBalance) Hold
+    place(authId, account, amount, date, ledgerBalance) Placement
     settle(authId, amount) SettlementOutcome
     expire(date) List~Hold~
     available(account, ledgerBalance) Money
@@ -139,9 +168,12 @@ Ledger "1" *-- "many" Entry : append only
 Ledger ..> ReversalOutcome : returns
 Ledger --> Account : knows
 Entry --> EntryType
+EntryType --> Direction
 Entry --> Money
+Hold --> Account : decides against
 Holds "1" *-- "many" Hold
 Holds ..> SettlementOutcome : returns
+Holds ..> Placement : returns
 Hold --> HoldState
 Hold --> Money
 ```
@@ -173,7 +205,7 @@ namespace interest {
   }
 }
 namespace application {
-  class Event {
+  class Operation {
     <<sealed>>
     id String
     day Int
@@ -192,9 +224,35 @@ namespace application {
     message String
   }
   class Replay {
-    process(event)
+    process(operation)
     closeDay() DayReport
-    run(events) List~DayReport~
+    run(operations) List~DayReport~
+  }
+  class PostCreditUseCase {
+    execute(operation, today) List~Note~
+  }
+  class PostDebitUseCase {
+    execute(operation, today) List~Note~
+  }
+  class AuthorizeUseCase {
+    execute(operation, today) List~Note~
+  }
+  class SettleUseCase {
+    execute(operation, today) List~Note~
+  }
+  class SettlementBooking {
+    type EntryType
+    detail String
+    notes List~Note~
+  }
+  class ReverseUseCase {
+    execute(operation, today) List~Note~
+  }
+  class CloseDayUseCase {
+    execute(day, date, notes) DayReport
+  }
+  class DayReporter {
+    report(account, date, swept, capitalization, notes) AccountReport
   }
   class DayReport {
     date LocalDate
@@ -203,21 +261,34 @@ namespace application {
 }
 class Ledger
 class Holds
-Event <|-- Credit
-Event <|-- Debit
-Event <|-- Authorization
-Event <|-- Settlement
-Event <|-- Reversal
+Operation <|-- Credit
+Operation <|-- Debit
+Operation <|-- Authorization
+Operation <|-- Settlement
+Operation <|-- Reversal
 FeeSweep --> Ledger : reads closings, appends fees
 FeeSweep --> FeeSchedule
 Interest --> Ledger : reads closings, appends once
 Interest ..> Capitalization : returns
-Replay --> Ledger
-Replay --> Holds
-Replay --> FeeSweep : at close
-Replay --> Interest : at close
-Replay --> Event : consumes
-Replay ..> DayReport : produces
+Replay --> Operation : consumes
+Replay --> PostCreditUseCase
+Replay --> PostDebitUseCase
+Replay --> AuthorizeUseCase
+Replay --> SettleUseCase
+Replay --> ReverseUseCase
+Replay --> CloseDayUseCase : at each day change
+PostCreditUseCase --> Ledger
+PostDebitUseCase --> Ledger
+AuthorizeUseCase --> Holds
+SettleUseCase --> Holds
+SettleUseCase --> Ledger
+SettleUseCase ..> SettlementBooking : decides, then books
+ReverseUseCase --> Ledger
+CloseDayUseCase --> FeeSweep
+CloseDayUseCase --> Interest
+CloseDayUseCase --> Holds : expires
+CloseDayUseCase --> DayReporter
+CloseDayUseCase ..> DayReport : produces
 ```
 
 ## Money
@@ -238,7 +309,7 @@ Replay ..> DayReport : produces
 - An entry: account, type, signed amount, booking date, value date (both calendar dates), a source (the event id it came from; rule entries have none), an optional detail (what it is, in words) and, for reversals of any kind, the sequence number of the entry it undoes. Reversals look entries up by source, never by the printed text.
 - Types: CREDIT, DEBIT, SETTLEMENT, UNMATCHED_SETTLEMENT, REVERSAL, OVERDRAFT_FEE, FEE_REVERSAL, INTEREST, INTEREST_REVERSAL.
 - Signed amounts rather than two columns. The sign is guarded against the type at append.
-- A reversal is just another line with the opposite sign. It references the entry it undoes and must carry a reason (duplicate, wrong amount, returned payment, won dispute, operations correction). A reversal without a reason cannot be constructed. The brief gives none for its reversal, so the scenario passes "not stated by the brief" explicitly and AMBIGUITIES records it.
+- A reversal is just another line with the opposite sign. It references the entry it undoes and must carry a `Reason` (duplicate, wrong amount, returned payment, won dispute, operations correction). `Reason` is a journal value type that refuses blank text, so neither the journal nor an operation can hold a reversal without one. The brief gives none for its reversal, so the scenario passes "not stated by the brief" explicitly and AMBIGUITIES records it.
 - A reversal takes the original's value date, so the history reads as if the original never happened. A refund is different: new money, a CREDIT with its own value date.
 - Only entries that came from events can be reversed by an event. Fees and interest are corrected by their own rules. A reversal of a reversal, a second reversal of the same event, or a reversal quoting another account's event is refused.
 - The journal owns the reversal rule (`Ledger.reverse`) and returns an outcome; the replay only records the refusal.
@@ -250,9 +321,10 @@ Replay ..> DayReport : produces
 
 - A hold is a promise, not a movement. It lives in the holds book beside the journal and never enters a balance.
 - `available = ledger balance − active holds`, where ledger balance is the closing balance as of today.
-- Authorizations are conditional: approve if `available − amount ≥ −overdraft limit`. The account's overdraft limit is a production knob; both accounts here have 0, so the rule reduces to "available stays at or above zero". Exactly zero approves.
+- Authorizations are conditional: approve if the available balance after the hold is within the account's overdraft limit (`available − amount ≥ −limit`; the account owns that rule). The account's overdraft limit is a production knob; both accounts here have 0, so the rule reduces to "available stays at or above zero". Exactly zero approves.
 - Debits and settlements are unconditional: they always book, whatever the balance.
-- States: ACTIVE, SETTLED (keeps the settled amount), DECLINED (kept so the report can show it), EXPIRED. An authorization id is used once; a second hold with the same id is refused.
+- States: ACTIVE, SETTLED (keeps the settled amount), DECLINED (kept so the report can show it), EXPIRED.
+- Placing a hold is idempotent on the authorization id. Networks retry an authorization when a response times out, so the same id can arrive twice; the second arrival returns the original decision, places nothing, and the report notes the repeat.
 - An authorization is decided on the balance as known at that moment and the decision is final. A later back-dated entry or reversal never re-opens it.
 - The holds book is a projection: it is rebuilt by replaying authorization and settlement events, so a hold's state may change in place. Append-only governs events and the journal, not this projection.
 - A hold expires at the close of the seventh day after it was placed, is released, and no longer counts against available. Scheme rules vary by merchant category (7 days for most, 30 for hotels and car rental); mapping expiry to merchant category codes is out of scope, 7 is used for all.
@@ -270,7 +342,7 @@ Replay ..> DayReport : produces
 
 - The fee is checked when a day closes, not when a debit arrives. A debit that goes negative at 10am and is covered by 4pm costs nothing.
 - Debits and settlements are never refused for lack of funds. Only authorizations are.
-- When a day closes, the check starts at the earliest value date touched since the last close (a journal query) and runs oldest first through today. On a normal day that is today alone. A back-dated entry moves the start back to its value date.
+- When a day closes, the check starts at the earliest value date touched since the last close and runs oldest first through today. The journal keeps the close marker per account and answers the query. On a normal day that is today alone. A back-dated entry moves the start back to its value date.
 - Oldest first matters: an earlier day's fee must be in place before the next day is judged.
 - The check reads the day's closing balance before its own fee, so a fee never feeds its own test.
 - Fees from earlier days do count toward later days.
@@ -295,12 +367,12 @@ Replay ..> DayReport : produces
 
 ## Replay
 
-- Events are replayed in the given order. The clock never goes backwards.
-- An event's "Day N" is the sender's label. The booking date is the processing day on which it was received.
+- The brief's events are operations on an account: credit, debit, authorization, settlement, reversal. They are replayed in the given order. The clock never goes backwards.
+- An operation's "Day N" is the sender's label. The booking date is the processing day on which it was received.
 - An authorization carries no value date in the model. A hold moves no money, so a value date has nothing to attach to; the brief's value_date on authorizations is dropped.
 - Dates in the ledger are calendar dates. The scenario translates "Day N" to a date from an anchor (Day 1 = the anchor); the report prints both the label and the date.
-- An event labelled earlier than the clock is booked today with its stated value date and a warning.
-- An event labelled later than the clock closes the intervening days first.
+- An operation labelled earlier than the clock is booked today with its stated value date and a warning.
+- An operation labelled later than the clock closes the intervening days first.
 - Closing a day expires holds, runs fees, then interest, then prints the report.
 - The ledger never reads a clock. A day ends when the replay closes it, which it does when the event labels move to the next day and once more at the end of the stream. In production the same close is triggered at the bank's cut-off time by whatever owns the business date: a scheduler, or an end-of-day event from another service.
 - A close reads entries booked on or before the day being closed. Anything that arrives later is booked on a later day with its own value date, and the next close re-checks from that value date. Late arrivals are back-dated entries; there is no second mechanism.
