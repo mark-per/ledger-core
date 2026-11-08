@@ -55,7 +55,8 @@ class AuthorizeUseCase(private val ledger: Ledger, private val holds: Holds) {
         account: Account,
     ): Note =
         Note.error(
-            "${operation.id} declined; ${operation.authId} for ${operation.amount} " +
-                "would take available $available below the overdraft limit of ${account.overdraftLimit}",
+            "${operation.id} declined; available $available, " +
+                "would be ${available - operation.amount} after the ${operation.authId} hold of ${operation.amount}, " +
+                "below the overdraft limit of ${account.overdraftLimit}",
         )
 }
