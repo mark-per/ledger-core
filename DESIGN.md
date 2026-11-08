@@ -120,7 +120,8 @@ namespace journal {
     fromSource(eventId) List~Entry~
     balance(account) Money
     closing(account, date) Money
-    closingBeforeOwnFee(account, date) Money
+    softClosing(account, date) Money
+    closingBeforeInterest(account, date) Money
     standingFee(account, date) Entry?
     earliestValueDateSinceLastClose(account) LocalDate?
     markClosed(account)
@@ -349,7 +350,7 @@ CloseDayUseCase ..> DayReport : produces
 - Debits and settlements are never refused for lack of funds. Only authorizations are.
 - When a day closes, the check starts at the earliest value date touched since the last close and runs oldest first through today. The journal keeps the close marker per account and answers the query. On a normal day that is today alone. A back-dated entry moves the start back to its value date.
 - Oldest first matters: an earlier day's fee must be in place before the next day is judged.
-- The check reads the day's closing balance before its own fee, so a fee never feeds its own test.
+- The check reads the day's soft closing (`softClosing`): the closing without that day's own end-of-day postings (fees, fee reversals, interest, interest reversals), so a fee never feeds its own test.
 - Fees from earlier days do count toward later days.
 - If the day is negative and has no fee yet: book one OVERDRAFT_FEE, booked today, valued that day.
 - If the day is no longer negative and has a fee: book one FEE_REVERSAL mirroring that fee entry (same amount, linked to it), booked today, valued that day. The fee stays in the journal; the net for that day is zero. This applies whatever made the day non-negative, a reversed debit or a back-dated credit alike: the fee rule is a function of the day's closing, in both directions. A bank that keeps the fee when a late deposit cures the overdraft would change this one rule.
@@ -360,13 +361,13 @@ CloseDayUseCase ..> DayReport : produces
 
 - Interest keeps its own state beside the journal: the unrounded accrual per account per day. It reads closing balances from the journal and writes to it only once per period, at capitalization. Until then the journal does not know interest exists.
 - Accrual: earned, not yet paid. Capitalization: paid, one credit.
-- Each day's accrual is the daily rate applied to that day's closing, rounded HALF_EVEN to the currency, zero unless positive. The unrounded figure is kept for the report.
+- Each day's accrual is the daily rate applied to that day's closing before its own interest postings (`closingBeforeInterest`), rounded HALF_EVEN to the currency, zero unless positive. That day's fees and fee reversals are in the base: they are posted before interest and are real movements. That day's INTEREST and INTEREST_REVERSAL entries are not: they are posted after the accrual is computed. The unrounded figure is kept for the report.
 - Accruals are computed at the end of each day, after fees. A back-dated entry changes earlier days' balances, so their accruals are recomputed at that day's close too.
 - Until they are paid, accruals are printed as provisional.
 - Nothing is booked before the last day, so no adjustment is ever needed inside the window.
 - When the last day of the period closes, after its fee check, the rounded daily accruals are summed and paid as one INTEREST entry. The payment is their sum by construction, so every printed daily is its own rounding and the brief's identity holds without adjustment.
 - The alternative, summing the exact accruals and rounding once, pays the figure closest to the true interest; daily rounding leaks up to half a minor unit per day per account, which grows with the period and the number of accounts. It was built and taken out: it requires nudging one daily figure so the dailies still sum to the payment, and a daily figure that is not its own rounding is harder to audit than a known, bounded leak. The report prints the exact unrounded total beside the paid amount so the leak is visible.
-- The credit is booked on the last day with value date the next day. Interest earned on a day never feeds that day's own balance; it is in the account from the day after.
+- The credit is booked and valued on the last day of the period, so it is in that day's closing. It never feeds its own accrual, because the accrual base leaves out that day's interest postings.
 - The report prints the exact unrounded interest beside the paid total, and each fee line shows the closing balance before that fee.
 - After capitalization, a back-dated entry that changes a paid period is corrected by reversing the INTEREST entry in full (INTEREST_REVERSAL) and booking a new INTEREST entry with the recomputed total, both carrying the same value date as the original interest entry. The type exists; the rule that books it is outside the window and is the subject of the one failing test.
 
@@ -381,7 +382,7 @@ CloseDayUseCase ..> DayReport : produces
 - An operation labelled later than the clock closes the intervening days first. Days after the window close normally and are reported; their accruals belong to a next period that this run never pays.
 - A value date before the first day counts toward balances from the first day on and earns nothing before it; the report carries a warning.
 - Every operation amount is a positive magnitude; the direction comes from the kind of operation. A non-positive amount is refused at the boundary.
-- Closing a day expires holds, runs fees, then interest, then prints the report.
+- Closing a day is a soft close, then posting, then a hard close. Soft close: holds expire, fees are decided on the soft-closed balances and posted, and accruals are computed on the balances with fees in and interest out. Posting: on the last day of the period the interest is paid, valued that same day. Hard close: the day's closing now includes everything, the close marker moves and the report is printed.
 - The ledger never reads a clock. A day ends when the replay closes it, which it does when the event labels move to the next day and once more at the end of the stream. In production the same close is triggered at the bank's cut-off time by whatever owns the business date: a scheduler, or an end-of-day event from another service.
 - A close reads entries booked on or before the day being closed. Anything that arrives later is booked on a later day with its own value date, and the next close re-checks from that value date. Late arrivals are back-dated entries; there is no second mechanism.
 - Single-threaded, no locks. One account's journal is written by one writer at a time; the core assumes that and does not enforce it.
@@ -389,8 +390,8 @@ CloseDayUseCase ..> DayReport : produces
 
 ## Expected outcome
 
-- ACC-001, final: 250.00, 250.00, 650.00, 285.00, 285.00, 285.00. Interest of 0.79 booked on Day 6, valued Day 7.
+- ACC-001, final: 250.00, 250.00, 650.00, 285.00, 285.00, 285.79. Interest of 0.79 booked and valued Day 6.
 - ACC-001, as known at the end of Day 5: 250.00, −395.00, 5.00, −385.00, −410.00. Three fees booked that day valued Days 2, 4, 5; three reversals on Day 6.
 - Auth-A approved Day 2, settled Day 4 for 185.00 of 200.00. Auth-B declined Day 5.
 - Interest: dailies 0.10, 0.10, 0.26, 0.11, 0.11, 0.11, paid 0.79; exact 0.802 printed beside it.
-- ACC-002: 3.334 / 3.333 / 3.333 valued Day 5, booked Day 6. Interest 0.004 + 0.004 = 0.008, booked Day 6, valued Day 7. Closes Day 6 at 10.000.
+- ACC-002: 3.334 / 3.333 / 3.333 valued Day 5, booked Day 6. Interest 0.004 + 0.004 = 0.008, booked and valued Day 6. Closes Day 6 at 10.008.
