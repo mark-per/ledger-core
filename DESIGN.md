@@ -37,7 +37,7 @@ The first five are the domain: one rule from the brief each, one or two types, o
 ## Journal
 
 - An append-only list of entries, one sequence number each, in arrival order.
-- An entry: account, type, signed amount, booking date, value date, reference.
+- An entry: account, type, signed amount, booking date, value date (both calendar dates), reference.
 - Types: CREDIT, DEBIT, SETTLEMENT, UNMATCHED_SETTLEMENT, REVERSAL, OVERDRAFT_FEE, FEE_REVERSAL, INTEREST, INTEREST_REVERSAL.
 - Signed amounts rather than two columns. The sign is guarded against the type at append.
 - A reversal is just another line with the opposite sign.
@@ -88,6 +88,7 @@ The first five are the domain: one rule from the brief each, one or two types, o
 
 - Events are replayed in the given order. The clock never goes backwards.
 - An event's "Day N" is the sender's label. The booking date is the processing day on which it was received.
+- Dates in the ledger are calendar dates. The scenario translates "Day N" to a date from an anchor (Day 1 = the anchor); the report prints both the label and the date.
 - An event labelled earlier than the clock is booked today with its stated value date and a warning.
 - An event labelled later than the clock closes the intervening days first.
 - Closing a day runs fees, then interest, then prints the report.
