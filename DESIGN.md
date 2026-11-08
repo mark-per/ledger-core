@@ -270,6 +270,9 @@ Replay ..> DayReport : produces
 - An event labelled earlier than the clock is booked today with its stated value date and a warning.
 - An event labelled later than the clock closes the intervening days first.
 - Closing a day expires holds, runs fees, then interest, then prints the report.
+- The ledger never reads a clock. A day ends when the replay closes it, which it does when the event labels move to the next day and once more at the end of the stream. In production the same close is triggered at the bank's cut-off time by whatever owns the business date: a scheduler, or an end-of-day event from another service.
+- A close reads entries booked on or before the day being closed. Anything that arrives later is booked on a later day with its own value date, and the next close re-checks from that value date. Late arrivals are back-dated entries; there is no second mechanism.
+- Single-threaded, no locks. One account's journal is written by one writer at a time; the core assumes that and does not enforce it.
 - The report, per account: entries booked today, past days whose closing changed, closing and available balance, fees booked today, every hold and its state, provisional accruals, errors and warnings.
 
 ## Expected outcome
