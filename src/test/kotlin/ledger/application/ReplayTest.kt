@@ -240,7 +240,7 @@ class ReplayTest {
 
         assertEquals(1, replay.ledger.fromSource("E7").size)
         assertTrue(
-            day5.notes.any { it == Note(Severity.WARNING, "E7 was already processed; this delivery is ignored") },
+            day5.notes.any { it == Note.warning("E7 was already processed; this delivery is ignored") },
         )
     }
 
