@@ -46,7 +46,8 @@ class CloseDayUseCase(
         date: LocalDate,
         notes: List<Note>,
     ): AccountReport {
-        val from = minOf(ledger.earliestValueDateSinceLastClose(account.id) ?: date, date)
+        val touched = minOf(ledger.earliestValueDateSinceLastClose(account.id) ?: date, date)
+        val from = maxOf(touched, window.anchor)
         val swept = sweep.run(account.id, from = from, today = date)
         interest.recompute(account.id, from = from, today = date)
         val capitalization = if (date == window.last) interest.capitalize(account.id, bookingDate = date) else null

@@ -23,7 +23,7 @@ class SettleUseCase(private val ledger: Ledger, private val holds: Holds, privat
         operation: Settlement,
         today: LocalDate,
     ): List<Note> {
-        val outcome = holds.settle(operation.authId, operation.amount)
+        val outcome = holds.settlementFor(operation.account, operation.authId, operation.amount)
         val booking = bookingFor(operation, outcome)
         ledger.append(
             accountId = operation.account,
@@ -34,6 +34,11 @@ class SettleUseCase(private val ledger: Ledger, private val holds: Holds, privat
             source = operation.id,
             detail = booking.detail,
         )
+        when (outcome) {
+            is Matched -> holds.recordSettlement(outcome.hold, operation.amount)
+            is OverHold -> holds.recordSettlement(outcome.hold, operation.amount)
+            is Unmatched -> Unit
+        }
         return booking.notes
     }
 

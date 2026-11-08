@@ -14,7 +14,7 @@ class ReportPrinter(private val window: Window) {
 
     fun render(report: DayReport): String =
         buildString {
-            appendLine("=== ${window.label(report.date)} ===")
+            appendLine("=== ${window.label(report.date)}${afterWindow(report)} ===")
             report.accounts.forEach { accountReport -> append(render(accountReport)) }
         }
 
@@ -61,6 +61,8 @@ class ReportPrinter(private val window: Window) {
         val detail = if (before == null) "" else ", $label $before"
         return "${entry.type} ${entry.amount} value ${window.label(entry.valueDate)}$detail"
     }
+
+    private fun afterWindow(report: DayReport): String = if (report.date > window.last) ", after the window" else ""
 
     private fun describe(hold: Hold): String =
         when (hold.state) {

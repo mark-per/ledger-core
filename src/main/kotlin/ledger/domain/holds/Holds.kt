@@ -17,6 +17,7 @@ import ledger.domain.journal.Account
 import ledger.domain.journal.AccountId
 import ledger.domain.money.Currency
 import ledger.domain.money.Money
+import ledger.domain.money.error.NonPositiveAmountError
 import java.time.LocalDate
 
 class Holds(private val expiryDays: Int) {
@@ -29,7 +30,8 @@ class Holds(private val expiryDays: Int) {
         date: LocalDate,
         ledgerBalance: Money,
     ): Placement {
-        val earlier = holds.firstOrNull { it.authId == authId }
+        if (!amount.isPositive) throw NonPositiveAmountError("a hold", amount)
+        val earlier = find(account.id, authId)
         if (earlier != null) return Repeated(earlier)
         val hold =
             Hold.decide(
@@ -44,18 +46,37 @@ class Holds(private val expiryDays: Int) {
         return Placed(hold)
     }
 
-    fun settle(
+    fun settlementFor(
+        accountId: AccountId,
         authId: String,
         amount: Money,
     ): SettlementOutcome {
-        val index = holds.indexOfFirst { it.authId == authId }
-        if (index < 0) return Unmatched(NEVER_AUTHORIZED)
-        return when (holds[index].state) {
+        if (!amount.isPositive) throw NonPositiveAmountError("a settlement", amount)
+        val hold = find(accountId, authId) ?: return Unmatched(NEVER_AUTHORIZED)
+        return when (hold.state) {
             DECLINED -> Unmatched(AUTHORIZATION_DECLINED)
             SETTLED -> Unmatched(ALREADY_SETTLED)
             EXPIRED -> Unmatched(AUTHORIZATION_EXPIRED)
-            ACTIVE -> consume(index, amount)
+            ACTIVE ->
+                if (amount > hold.amount) {
+                    OverHold(
+                        hold,
+                        amount - hold.amount,
+                    )
+                } else {
+                    Matched(hold, hold.amount - amount)
+                }
         }
+    }
+
+    fun recordSettlement(
+        hold: Hold,
+        amount: Money,
+    ): Hold {
+        val index = holds.indexOf(hold)
+        val settled = hold.copy(state = SETTLED, settledFor = amount)
+        holds[index] = settled
+        return settled
     }
 
     fun expire(date: LocalDate): List<Hold> {
@@ -76,16 +97,10 @@ class Holds(private val expiryDays: Int) {
 
     fun forAccount(accountId: AccountId): List<Hold> = holds.filter { it.account == accountId }
 
-    private fun consume(
-        index: Int,
-        amount: Money,
-    ): SettlementOutcome {
-        val hold = holds[index]
-        val settled = hold.copy(state = SETTLED, settledFor = amount)
-        holds[index] = settled
-        if (amount > hold.amount) return OverHold(settled, amount - hold.amount)
-        return Matched(settled, hold.amount - amount)
-    }
+    private fun find(
+        accountId: AccountId,
+        authId: String,
+    ): Hold? = holds.firstOrNull { it.account == accountId && it.authId == authId }
 
     private fun activeTotal(
         accountId: AccountId,

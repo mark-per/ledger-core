@@ -1,6 +1,7 @@
 package ledger.domain.money
 
 import ledger.domain.money.error.AmountNotAtCurrencyScaleError
+import ledger.domain.money.error.AmountTooSmallToSplitError
 import ledger.domain.money.error.CurrencyMismatchError
 import ledger.domain.money.error.NonPositivePartCountError
 import java.math.BigDecimal
@@ -25,6 +26,7 @@ data class Money(val amount: BigDecimal, val currency: Currency) : Comparable<Mo
     fun allocate(parts: Int): List<Money> {
         if (parts <= 0) throw NonPositivePartCountError(parts)
         if (isNegative) return (-this).allocate(parts).map { part -> -part }
+        if (inUnits() < parts) throw AmountTooSmallToSplitError(this, parts)
         val share = Money(amount.divide(BigDecimal(parts), currency.scale, RoundingMode.DOWN), currency)
         val leftover = this - share * parts
         val unit = unit(currency)

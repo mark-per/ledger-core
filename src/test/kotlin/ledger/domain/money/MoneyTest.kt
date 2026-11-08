@@ -3,6 +3,7 @@ package ledger.domain.money
 import ledger.domain.money.Currency.AED
 import ledger.domain.money.Currency.BHD
 import ledger.domain.money.error.AmountNotAtCurrencyScaleError
+import ledger.domain.money.error.AmountTooSmallToSplitError
 import ledger.domain.money.error.CurrencyMismatchError
 import ledger.domain.money.error.NonPositivePartCountError
 import java.math.BigDecimal
@@ -86,8 +87,10 @@ class MoneyTest {
     }
 
     @Test
-    fun splitsZeroAndRefusesZeroParts() {
-        assertEquals(List(3) { Money.zero(AED) }, Money.zero(AED).allocate(3))
+    fun refusesZeroPartsAndAmountsWithFewerUnitsThanParts() {
         assertFailsWith<NonPositivePartCountError> { Money.of("1.00", AED).allocate(0) }
+        assertFailsWith<AmountTooSmallToSplitError> { Money.of("0.02", AED).allocate(3) }
+        assertFailsWith<AmountTooSmallToSplitError> { Money.zero(AED).allocate(3) }
+        assertEquals(listOf("0.01", "0.01", "0.01"), Money.of("0.03", AED).allocate(3).map { it.toString() })
     }
 }

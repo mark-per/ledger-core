@@ -61,7 +61,8 @@ class Replay(
 
     fun run(operations: List<Operation>): List<DayReport> {
         operations.forEach(::process)
-        while (today <= window.last) closeDay()
+        val lastDayToClose = maxOf(window.last, window.date(operations.maxOfOrNull { it.day } ?: 1))
+        while (today <= lastDayToClose) closeDay()
         return reports.toList()
     }
 
@@ -76,6 +77,7 @@ class Replay(
                 ),
             )
         }
+        warnIfValuedBeforeTheWindow(operation)
         val raised =
             when (operation) {
                 is Credit -> postCredit.execute(operation, today)
@@ -93,6 +95,21 @@ class Replay(
         notes.clear()
         day += 1
         return report
+    }
+
+    private fun warnIfValuedBeforeTheWindow(operation: Operation) {
+        val valueDay =
+            when (operation) {
+                is Credit -> operation.valueDay
+                is Debit -> operation.valueDay
+                is Settlement -> operation.valueDay
+                is Authorization, is Reversal -> return
+            }
+        if (valueDay >= 1) return
+        note(
+            operation.account,
+            Note.warning("${operation.id} is valued Day $valueDay, before the window; it counts from Day 1"),
+        )
     }
 
     private fun note(

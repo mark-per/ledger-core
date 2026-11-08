@@ -31,17 +31,18 @@ class Ledger(accounts: List<Account>) {
         source: String? = null,
         detail: String? = null,
         reverses: Int? = null,
-    ): Entry {
-        if (amount.currency != account(accountId).currency) {
-            throw CurrencyMismatchError(
-                account(accountId).currency,
-                amount.currency,
-            )
-        }
-        if (!type.direction.allows(amount.amount.signum())) throw AmountSignContradictsTypeError(type, amount)
-        val entry = Entry(nextSequence(), accountId, type, amount, bookingDate, valueDate, source, detail, reverses)
-        entries += entry
-        return entry
+    ): Entry =
+        appendAll(
+            accountId,
+            listOf(Posting(type, amount, bookingDate, valueDate, source, detail, reverses)),
+        ).single()
+
+    fun appendAll(
+        accountId: AccountId,
+        postings: List<Posting>,
+    ): List<Entry> {
+        postings.forEach { posting -> validate(accountId, posting) }
+        return postings.map { posting -> write(accountId, posting) }
     }
 
     fun reverse(
@@ -56,10 +57,9 @@ class Ledger(accounts: List<Account>) {
         if (originals.any { it.account != accountId }) return DifferentAccount
         if (originals.any { it.type == REVERSAL }) return NotReversible
         if (!reversedSources.add(source)) return AlreadyReversed
-        val reversals =
+        val postings =
             originals.map { original ->
-                append(
-                    accountId = accountId,
+                Posting(
                     type = REVERSAL,
                     amount = -original.amount,
                     bookingDate = bookingDate,
@@ -69,6 +69,7 @@ class Ledger(accounts: List<Account>) {
                     reverses = original.sequence,
                 )
             }
+        val reversals = appendAll(accountId, postings)
         return Booked(reversals)
     }
 
@@ -110,7 +111,39 @@ class Ledger(accounts: List<Account>) {
         closedThrough[accountId] = entries(accountId).lastOrNull()?.sequence ?: 0
     }
 
-    private fun nextSequence(): Int = entries.size + 1
+    private fun validate(
+        accountId: AccountId,
+        posting: Posting,
+    ) {
+        val currency = account(accountId).currency
+        if (posting.amount.currency != currency) throw CurrencyMismatchError(currency, posting.amount.currency)
+        if (!posting.type.direction.allows(
+                posting.amount.amount.signum(),
+            )
+        ) {
+            throw AmountSignContradictsTypeError(posting.type, posting.amount)
+        }
+    }
+
+    private fun write(
+        accountId: AccountId,
+        posting: Posting,
+    ): Entry {
+        val entry =
+            Entry(
+                sequence = entries.size + 1,
+                account = accountId,
+                type = posting.type,
+                amount = posting.amount,
+                bookingDate = posting.bookingDate,
+                valueDate = posting.valueDate,
+                source = posting.source,
+                detail = posting.detail,
+                reverses = posting.reverses,
+            )
+        entries += entry
+        return entry
+    }
 
     private fun isOwnDayFee(
         entry: Entry,

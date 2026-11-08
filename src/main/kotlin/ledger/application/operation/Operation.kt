@@ -3,6 +3,7 @@ package ledger.application.operation
 import ledger.domain.journal.AccountId
 import ledger.domain.journal.Reason
 import ledger.domain.money.Money
+import ledger.domain.money.error.NonPositiveAmountError
 
 sealed interface Operation {
     val id: String
@@ -16,7 +17,11 @@ sealed interface Operation {
         val amount: Money,
         val valueDay: Int,
         val instalments: Int = 1,
-    ) : Operation
+    ) : Operation {
+        init {
+            if (!amount.isPositive) throw NonPositiveAmountError(id, amount)
+        }
+    }
 
     data class Debit(
         override val id: String,
@@ -24,7 +29,11 @@ sealed interface Operation {
         override val account: AccountId,
         val amount: Money,
         val valueDay: Int,
-    ) : Operation
+    ) : Operation {
+        init {
+            if (!amount.isPositive) throw NonPositiveAmountError(id, amount)
+        }
+    }
 
     data class Authorization(
         override val id: String,
@@ -32,7 +41,11 @@ sealed interface Operation {
         override val account: AccountId,
         val authId: String,
         val amount: Money,
-    ) : Operation
+    ) : Operation {
+        init {
+            if (!amount.isPositive) throw NonPositiveAmountError(id, amount)
+        }
+    }
 
     data class Settlement(
         override val id: String,
@@ -41,7 +54,11 @@ sealed interface Operation {
         val authId: String,
         val amount: Money,
         val valueDay: Int,
-    ) : Operation
+    ) : Operation {
+        init {
+            if (!amount.isPositive) throw NonPositiveAmountError(id, amount)
+        }
+    }
 
     data class Reversal(
         override val id: String,
